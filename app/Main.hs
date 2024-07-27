@@ -1,11 +1,12 @@
 module Main where
 
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString.Lazy as A
 import qualified Data.ByteString.Builder as B
 import Data.Foldable
 import System.Process
 import Text.Printf
 import Data.List
+import Data.Fixed
 
 type Pulse = Float
 type Seconds = Float
@@ -15,13 +16,16 @@ type Semitones = Float
 type Beats = Float
 
 outputFilePath :: FilePath
-outputFilePath = "output.bin"
+outputFilePath = "output"
+
+duration :: Seconds
+duration = 2
 
 volume :: Float
-volume = 0.2
+volume = 0.5
 
 sampleRate :: Samples
-sampleRate = 48000.0
+sampleRate = 24000.0
 
 pitchStandard :: Hz
 pitchStandard = 440.0
@@ -54,64 +58,31 @@ freq hz duration =
     output :: [Pulse]
     output = map sin $ map (* step) [0.0 .. sampleRate * duration]
 
-wave :: [Pulse]
-wave =
-  concat
-    [ note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.5
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.5
-    , note 5 0.25
-    , note 5 0.25
-    , note 5 0.25
-    , note 5 0.25
-    , note 5 0.25
-    , note 5 0.25
-    , note 5 0.5
-    , note 3 0.25
-    , note 3 0.25
-    , note 3 0.25
-    , note 3 0.25
-    , note 3 0.25
-    , note 3 0.25
-    , note 3 0.5
-    , note (-2) 0.5
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.25
-    , note 0 0.5
-    ]
 
-hehehe :: [Pulse]
-hehehe = concat [ note 0 0.25
-                , note 0 0.25
-                , note 12 0.5
-                , note 7 (0.5 + 0.25)
-                , note 6 0.5
-                , note 5 0.5
-                , note 3 0.5
-                , note 0 0.25
-                , note 3 0.25
-                , note 5 0.25
-                ]
+modulator :: (Num a, Floating t) => (t -> a) -> t -> a -> t -> a
+modulator baseform freq amp x = amp*baseform(freq*x)
+
+sin2 :: Floating a => a -> a
+sin2 x = sin(2*pi*x)
+
+sawtooth :: Real a => a -> a
+sawtooth x = 2 * (mod' x 1) - 1
+
+outFunction :: Samples -> Samples
+outFunction = modulator sin2 440 1
+
+outputSamples :: [Samples]
+outputSamples = map ((* volume) . outFunction . (/ sampleRate)) [0 .. sampleRate * duration]
 
 save :: FilePath -> IO ()
-save filePath = B.writeFile filePath $ B.toLazyByteString $ fold $ map B.floatLE hehehe
+save filePath = A.writeFile filePath $ B.toLazyByteString $ fold $ map B.floatLE outputSamples
 
 play :: IO ()
 play = do
   save outputFilePath
+  _ <- runCommand $ printf "ffmpeg -y -f f32le -ar %f -ac 1 -i %s %s.wav" sampleRate outputFilePath outputFilePath
   _ <- runCommand $ printf "ffplay -autoexit -showmode 1 -f f32le -ar %f %s" sampleRate outputFilePath
   return ()
 
 main :: IO ()
-main = save outputFilePath
+main = play
